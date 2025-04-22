@@ -1,0 +1,228 @@
+---
+title: "EDA"
+author: "Code Notebook"
+date: "2025-04-21"
+output: html_document
+---
+
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(ggplot2)
+library(scales)
+library(rlang)
+```
+
+
+
+```{r}
+setwd("C:/Users/dylan/Downloads/Data 205/Water Use")
+water_use <- read_csv("Water_Use_10States.csv") %>% clean_names()
+tewu <- read_csv("TEWU_10States.csv") %>% clean_names()
+population <- read_csv("Population_data.csv") %>% clean_names()
+irrigation <- read_excel("Irrigation.xlsx") %>% clean_names()
+water_quality <- read_csv("BKB_WaterQualityData_2020084.csv") %>% clean_names()
+```
+
+
+
+```{r}
+state_map <- tibble(
+  state = c("CA", "WA", "UT", "SD", "TX", "IL", "FL", "MD", "ME", "AZ"),
+  year_col = c("year_2", "year_5", "year_8", "year_11", "year_14",
+               "year_17", "year_20", "year_23", "year_26", "year_29"),
+  mgd_col  = c("pscutot_mgd_ca", "pscutot_mgd_wa", "pscutot_mgd_ut", "pscutot_mgd_sd",
+               "pscutot_mgd_tx", "pscutot_mgd_il", "pscutot_mgd_fl", "pscutot_mgd_md",
+               "pscutot_mgd_me", "pscutot_mgd")
+)
+
+# Build tidy long-format dataframe
+water_use_long <- purrr::map_dfr(1:nrow(state_map), function(i) {
+  state <- state_map$state[i]
+  y_col <- state_map$year_col[i]
+  m_col <- state_map$mgd_col[i]
+  
+  tibble(
+    state = state,
+    year = as.numeric(water_use[[y_col]]),
+    mgd = as.numeric(water_use[[m_col]])
+  ) %>% drop_na()
+})
+```
+This reshapes a wide-format dataset (in this case, water_use) into a tidy long-format dataframe called water_use_long. It starts by creating a mapping table (state_map) that links each U.S. state's abbreviation to its corresponding year and water use (MGD) column names. Then, it uses purrr::map_dfr() to loop over each row in that mapping table. For each state, the function extracts the appropriate year and mgd (millions of gallons per day) values from the original dataset, combines them into a new tibble with the state name, and removes rows with missing data using drop_na(). The final output is a clean long-format dataframe where each row represents a specific state-year-MGD combination, which is ideal for plotting and further analysis.
+
+
+```{r}
+tewu_long <- tewu %>%
+  pivot_longer(cols = starts_with("huc12_id"), names_to = "huc12_id_var", values_to = "huc12_id") %>%
+  bind_cols(
+    tewu %>%
+      pivot_longer(cols = starts_with("year"), names_to = "year_var", values_to = "year") %>%
+      select(year),
+    tewu %>%
+      pivot_longer(cols = starts_with("tecuftot_mgd"), names_to = "tecuftot_mgd_var", values_to = "tecuftot_mgd") %>%
+      select(tecuftot_mgd)
+  ) %>%
+  drop_na(year)
+```
+This R code transforms the `tewu` dataset (thermoelectric water use data) from wide to long format using a combination of pivot_longer() and bind_cols(). The goal is to align each thermoelectric water use value (tecuftot_mgd) with its corresponding year and HUC12 geographic identifier. First, it reshapes all huc12_id_* columns into a single huc12_id column while tracking their original variable names in huc12_id_var. Next, it binds this to a reshaped version of the year columns (e.g., year`, year.1, etc.) and another reshaped version of the tecuftot_mgd_* columns. Each of these transformations extracts the values into a shared long structure so that each row represents a unique combination of location, year, and water use amount. Finally, it filters out any rows where year is missing using drop_na(year). This format is better suited for analysis and visualization.
+
+
+```{r}
+population <- population %>%
+  mutate(total_pop = rowSums(select(., starts_with("pop_")), na.rm = TRUE))
+
+population_clean <- population %>%
+  mutate(
+    sex = recode(sex_1, `0` = "Both", `1` = "Male", `2` = "Female"),
+    origin = recode(origin_2, `0` = "Total", `1` = "Not Hispanic", `2` = "Hispanic"),
+    race = recode(race_3, `0` = "All", `1` = "White", `2` = "Black", `3` = "AIAN",
+                  `4` = "Asian", `5` = "NHPI", `6` = "2+ Races", `7` = "White Combo",
+                  `8` = "Black Combo", `9` = "AIAN Combo", `10` = "Asian Combo", `11` = "NHPI Combo")
+  )
+```
+This R code prepares the population dataset for analysis by aggregating total population and converting coded variables into readable labels. First, it creates a new column, total_pop, by summing across all columns that begin with `"pop_"`, which represent different age groups or population categories; na.rm = TRUE ensures missing values are ignored during summation. Next, the population_clean object is created by recoding numeric codes from the original columns into descriptive categories: sex_1 is transformed into sex with values "Male", "Female", and "Both"; origin_2 into origin as "Hispanic", "Not Hispanic", or "Total"; and race_3 into race, which includes categories such as "White", "Black", "Asian", and several multi-race combinations. These transformations improve readability and make the dataset more suitable for visualizations and demographic analysis.
+
+
+```{r}
+water_quality_clean <- water_quality %>%
+  filter(!is.na(site_id), !is.na(year))
+```
+This R code filters the water_quality dataset to create a cleaner version named water_quality_clean by removing rows with missing values in key columns. Specifically, it uses the filter() function to retain only those observations where both site_id and year are not NA. These two fields are typically essential for temporal and spatial analysis, as site_id identifies the monitoring location and year indicates when the measurements were taken. By ensuring both are present, the code improves the reliability and integrity of any analysis or visualization that depends on those variables.
+
+
+
+```{r}
+state_map <- tibble(
+  state = c("CA", "WA", "UT", "SD", "TX", "IL", "FL", "MD", "ME", "AZ"),
+  year_col = c("year_2", "year_5", "year_8", "year_11", "year_14",
+               "year_17", "year_20", "year_23", "year_26", "year_29"),
+  mgd_col  = c("pscutot_mgd_ca", "pscutot_mgd_wa", "pscutot_mgd_ut", "pscutot_mgd_sd",
+               "pscutot_mgd_tx", "pscutot_mgd_il", "pscutot_mgd_fl", "pscutot_mgd_md",
+               "pscutot_mgd_me", "pscutot_mgd")
+)
+
+# Build long-format tidy irrigation dataset
+irrigation_long <- purrr::map_dfr(1:nrow(state_map), function(i) {
+  s <- state_map$state[i]
+  y_col <- state_map$year_col[i]
+  m_col <- state_map$mgd_col[i]
+  
+  tibble(
+    state = s,
+    year = as.numeric(irrigation[[y_col]]),
+    mgd = as.numeric(irrigation[[m_col]])
+  ) %>% drop_na()
+})
+```
+This R code reshapes a wide-format irrigation dataset into a long-format structure suitable for analysis and visualization. It begins by defining a state_map tibble that associates each state abbreviation with its corresponding year and irrigation water use (mgd) column names in the dataset. Using purrr::map_dfr(), the code loops over each row of state_map, dynamically pulling the appropriate columns from the original irrigation dataset for each state. For every iteration, it creates a tibble containing the state name, the year (converted to numeric), and the water use in million gallons per day (mgd). The drop_na() function is applied to remove rows with missing values in either the year or mgd columns. The final output, irrigation_long, is a tidy dataframe with one observation per state-year-MGD combination, making it ideal for time-series plots or comparative analysis across states.
+
+
+
+```{r}
+summary(water_use_long$pscutot_mgd)
+summary(tewu_long$tecuftot_mgd)
+summary(water_quality_clean$salinity_ppt)
+summary(population_clean$total_pop)
+```
+
+
+## Water Use
+```{r}
+ggplot(water_use_long, aes(x = year, y = mgd)) +
+  geom_line(color = "steelblue") +
+  facet_wrap(~ state, scales = "free_y") +
+  labs(
+    title = "Public Supply Water Use by State (MGD)",
+    x = "Year",
+    y = "Million Gallons per Day"
+  ) +
+  theme_minimal()
+
+ggplot(water_use_long, aes(x = mgd)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Water Use (MGD)", x = "MGD", y = "Count") +
+  theme_minimal()
+```
+Graph 1:
+This histogram visualizes the distribution of water use across all observations in million gallons per day (MGD). The chart is highly right-skewed, with the vast majority of values concentrated near zero. Most observations fall below 1 MGD, as indicated by the tall bar on the left, and frequency rapidly declines as usage increases. This suggests that low water usage is far more common across the dataset, while high-consumption cases are rare and appear as long-tail outliers. Such a distribution may be typical of residential or localized public supply systems, where only a few locations demand large volumes of water.
+
+Graph 2:
+The second graph is a duplicate of the first and presents the same histogram showing the distribution of water use in MGD. The pattern again emphasizes extreme skewness, where water use is minimal in most cases and only a small fraction of observations exceed a few MGD. This reinforces the insight that most water users or sites consume relatively little water, and helps identify the need for possible log transformation if statistical modeling is planned. Repeated visualization also helps validate data consistency and the presence of extreme values that may need further investigation.
+
+## Thermo Electric Water Use
+```{r}
+ggplot(tewu_long, aes(x = year, y = tecuftot_mgd)) +
+  geom_line(stat = "summary", fun = mean, color = "orange") +
+  labs(title = "Average Thermoelectric Water Use Over Time", x = "Year", y = "MGD") +
+  theme_minimal()
+
+ggplot(tewu_long, aes(x = factor(year), y = tecuftot_mgd)) +
+  geom_boxplot(fill = "coral", outlier.alpha = 0.2) +
+  labs(title = "Distribution of Thermoelectric Use by Year", x = "Year", y = "MGD") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90))
+```
+Graph 1:
+This line graph illustrates the trend in average thermoelectric water use (measured in million gallons per day, or MGD) from 2008 to 2020. Each point represents the mean water usage for a given year, and the orange line connects these yearly averages to show the overall trajectory. The graph reveals a notable decline in average usage between 2008 and 2011, hitting a low around 2011. After that, usage begins to gradually increase, with a more pronounced upward trend from 2017 to 2020, peaking in 2020. This pattern may reflect changes in thermoelectric technology, regulation, climate conditions, or energy demand over time. The relatively low y-axis values indicate that while usage is increasing, average MGD remains under 0.05 across all years, suggesting generally low per-site consumption in this category.
+
+Graph 2:
+This scatter plot displays the distribution of thermoelectric water use in million gallons per day (MGD) from 2008 to 2020. Each point represents a unique observation in a specific year, allowing for a visual assessment of variability and trends over time. The data is heavily concentrated near the lower end of the MGD scale, indicating that most thermoelectric sites use relatively small amounts of water. However, occasional outliers reach values above 5 or even 8 MGD in certain years. There does not appear to be a strong upward or downward trend across the timeframe, but the consistent pattern of low values with sparse high outliers suggests the need for further investigation into what types of facilities or conditions produce higher usage.
+
+
+## Population
+```{r}
+plot_data <- population_clean %>%
+  filter(sex == "Both", origin == "Total", race == "All")
+
+# Plot total population over time
+ggplot(plot_data, aes(x = year_4, y = total_pop)) +
+  geom_line(color = "darkgreen") +
+  labs(
+    title = "Projected Total US Population",
+    x = "Year",
+    y = "Total Population"
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  theme_minimal()
+```
+This line graph presents the projected total population of the United States from 2020 through 2100. The y-axis represents total population in raw numbers (with comma separators for readability), and the x-axis spans the projection years. The trend shows a steady population increase from 2020 to approximately 2080, where it peaks just under 740 million people. After reaching this apex, the population begins to gradually decline, suggesting that long-term demographic shifts such as declining birth rates, aging populations, or immigration policy changes may play a significant role in the latter half of the century. This type of visualization is critical for long-term planning in areas like infrastructure, environmental policy, healthcare, and resource allocation. The smoothness of the curve also suggests the use of modeled projections rather than year-by-year survey data.
+
+
+## Irrigation Data
+```{r}
+ggplot(irrigation_long, aes(x = year, y = mgd)) +
+  geom_line(color = "seagreen") +
+  facet_wrap(~ state, scales = "free_y") +
+  labs(
+    title = "Irrigation Water Use by State (MGD)",
+    x = "Year",
+    y = "Million Gallons per Day"
+  ) +
+  theme_minimal()
+```
+This faceted line graph displays irrigation water use in million gallons per day (MGD) for ten U.S. states from approximately 2010 to 2020. Each subplot represents one state, with water use shown over time. States like Arizona (AZ) and California (CA) show consistently high irrigation use, peaking around 20 and 15 MGD respectively, indicating their large agricultural sectors and reliance on irrigation. Other states such as Maryland (MD) and Utah (UT) display moderate levels, while states like Maine (ME) and South Dakota (SD) show minimal water use, barely reaching above 0.01 MGD. The downward spikes seen in many states suggest either missing data or seasonal irrigation patterns that weren’t smoothed in the visualization. Overall, the graph clearly illustrates the diverse scale of irrigation needs across different regions, with western and southwestern states consuming the most water for agriculture.
+
+
+## Water Quality
+```{r}
+ggplot(water_quality_clean, aes(x = year, y = water_temp_c)) +
+  geom_jitter(alpha = 0.3) +
+  geom_smooth(method = "loess", color = "red") +
+  labs(title = "Water Temperature Trend", x = "Year", y = "Temp (°C)") +
+  theme_minimal()
+
+
+ggplot(water_quality_clean, aes(x = `dissolved_oxygen_mg_l`)) +
+  geom_histogram(bins = 25, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Dissolved Oxygen", x = "mg/L", y = "Count") +
+  theme_minimal()
+```
+Graph 1:
+This scatterplot with a fitted line illustrates the trend in recorded water temperatures (in °C) over a wide time range, from the late 19th century through 2020. Each black dot represents an individual observation, while the red line shows the smoothed trend (likely from a LOESS or GAM fit), with a shaded confidence interval. Early observations are sparse, but from around the year 2000 onward, data becomes much denser. The fitted curve indicates a general increase in water temperature in recent decades, which could reflect the effects of climate change, urban heat island effects, or altered hydrological patterns. A few extremely high outliers appear post-2000 and should be evaluated for measurement anomalies. This graph provides important insight into long-term thermal changes in aquatic environments.
+
+Graph 2:
+This histogram displays the distribution of dissolved oxygen concentrations across all water samples, measured in milligrams per liter (mg/L). The data shows a roughly normal (bell-shaped) distribution, with most values falling between 4 and 9 mg/L and a peak around 6–7 mg/L. Dissolved oxygen is critical for aquatic life, and this distribution suggests generally healthy oxygen levels in the sampled water bodies. However, the tail on the lower end (near 0 mg/L) may indicate occasional hypoxic conditions, which could be harmful to aquatic ecosystems. The presence of high DO values (>10 mg/L) on the right tail is rare but possible under cold, well-aerated conditions. This visualization offers a useful overview of water quality health based on oxygen availability.
+
